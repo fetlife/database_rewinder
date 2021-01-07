@@ -83,8 +83,18 @@ module DatabaseRewinder
     end
 
     def get_config_from(connection_name)
-      if Gem::Version.new(Rails.version) >= Gem::Version.new("6.0.0")
-        database_configuration.configs_for(env_name: connection_name).first.configuration_hash
+      if database_configuration.respond_to?(:configurations) && Gem::Version.new(Rails.version) >= Gem::Version.new("6.1.0")
+        # copied from https://github.com/rails/rails/blob/914caca2d31bd753f47f9168f2a375921d9e91cc/activerecord/lib/active_record/database_configurations.rb#L81-L88 to remove deprecation warning
+        # the recommendation is to use configs_for passing :env_name or :name but this doesn't work if we want to support both
+        # DatabaseRewinder["test"] and DatabaseRewinder["primary"] (in the case of multiple databases)
+        # with [] until Rails 6.1, we can pass a single string and it's smart enough to choose the correct config
+        database_configuration.configurations
+          .sort_by.with_index { |db_config, i| db_config.for_current_env? ? [0, i] : [1, i] }
+          .find do |db_config|
+            db_config.env_name == connection_name.to_s ||
+              (db_config.for_current_env? && db_config.name == connection_name.to_s)
+          end
+          .configuration_hash
       else
         database_configuration[connection_name]
       end
